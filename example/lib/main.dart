@@ -5,7 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:ccpp_sdk_flutter/ccpp_sdk_flutter.dart';
 
 void main() async {
-  // await CcppSdkFlutter.initialize("JT01", ApiEnvironment.sandbox);
+  await CcppSdkFlutter.initialize("JT01", ApiEnvironment.sandbox);
   runApp(new MyApp());
 }
 
