@@ -3,7 +3,7 @@ import UIKit
 import WebKit
 import PGW
 
-public class SwiftCcppSdkFlutterPlugin: NSObject, FlutterPlugin, UINavigationControllerDelegate {
+public class SwiftCcppSdkFlutterPlugin: NSObject, FlutterPlugin, Transaction3DSDelegate {
   
   fileprivate var result: FlutterResult?
   fileprivate var viewController: UIViewController?
@@ -45,48 +45,56 @@ public class SwiftCcppSdkFlutterPlugin: NSObject, FlutterPlugin, UINavigationCon
     }
   }
     
-    fileprivate func paymentWithCreditCard(_ paymentToken: String, ccNumber: String, expMonth: Int, expYear: Int, cvv: String){
-        let paymentToken:String = "roZG9I1hk/GYjNt+BYPYbxQtKElbZDs9M5cXuEbE+Z0QTr/yUcl1oG7t0AGoOJlBhzeyBtf5mQi1UqGbjC66E85S4m63CfV/awwNbbLbkxsvfgzn0KSv7JzH3gcs/OIL"
+  fileprivate func paymentWithCreditCard(_ paymentToken: String, ccNumber: String, expMonth: Int, expYear: Int, cvv: String){
+    
+      //Construct credit card request
+      let creditCardPayment:CreditCardPayment = CreditCardPaymentBuilder(pan: ccNumber)
+          .expiryMonth(expMonth)
+          .expiryYear(expYear)
+          .securityCode(cvv)
+          .build()
+    
+      //Construct transaction request
+      let transactionRequest:TransactionRequest = TransactionRequestBuilder(paymentToken: paymentToken)
+          .withCreditCardPayment(creditCardPayment)
+          .build()
+    
+      //Execute payment request
+      PGWSDK.shared.proceedTransaction(transactionRequest: transactionRequest,
+       success: { (response:TransactionResultResponse) in
         
-        //Construct credit card request
-        let creditCardPayment:CreditCardPayment = CreditCardPaymentBuilder(pan: "4111111111111111")
-            .expiryMonth(12)
-            .expiryYear(2019)
-            .securityCode("123")
-            .build()
-        
-        //Construct transaction request
-        let transactionRequest:TransactionRequest = TransactionRequestBuilder(paymentToken: paymentToken)
-            .withCreditCardPayment(creditCardPayment)
-            .build()
-        
-        //Execute payment request
-        PGWSDK.shared.proceedTransaction(transactionRequest: transactionRequest,
-         success: { (response:TransactionResultResponse) in
+          //For 3DS
+          if response.responseCode == APIResponseCode.TRANSACTION_AUTHENTICATE {
+
+            let redirectUrl:String = response.redirectUrl!
+            let webView = WKWebViewController()
+            webView.redirectUrl = redirectUrl
+            webView.transaction3dsDelegate = self
+            let nav = UINavigationController.init(rootViewController: webView)
+            self.viewController?.present(nav, animated: true, completion: nil)
+          } else if response.responseCode == APIResponseCode.TRANSACTION_COMPLETED {
             
-            //For 3DS
-            if response.responseCode == APIResponseCode.TRANSACTION_AUTHENTICATE {
-                
-                let redirectUrl:String = response.redirectUrl!
-//                                                self.openWebViewController(redirectUrl) //Open WebView for 3DS
-            } else if response.responseCode == APIResponseCode.TRANSACTION_COMPLETED {
-                
-                //Inquiry payment result by using transaction id.
-                let transactionID:String = response.transactionID!
-                self.result!(transactionID)
-            } else {
-                //Get error response and display error
-//                self.result!("ERROR" + response.responseDescription!)
-              let webView = WKWebViewController()
-              webView.redirectUrl = "https://google.com"
-              let nav = UINavigationController.init(rootViewController: webView)
-              self.viewController?.present(nav, animated: true, completion: nil)
-            }
-        }) { (error:NSError) in
-            //Get error response and display error
-          self.result!("ERROR" + error.description)
-        }
+              //Inquiry payment result by using transaction id.
+              let transactionID:String = response.transactionID!
+              self.result!(transactionID)
+          } else {
+              //Get error response and display error
+            self.result!("ERROR " + response.responseDescription!)
+          }
+      }) { (error:NSError) in
+          //Get error response and display error
+        self.result!("ERROR " + error.description)
+      }
+  }
+  func onTransactionResult(_ transactionId: String?, _ errorMessage: String?) {
+    if(transactionId != nil){
+      self.result!(transactionId)
     }
+    else{
+      self.result!("ERROR " + errorMessage!)
+    }
+  }
+  
 }
 
 //For WKWebView implementation
@@ -95,9 +103,23 @@ class WKWebViewController: UIViewController {
   var webView:WKWebView!
   var pgwWebViewDelegate:PGWWKWebViewDelegate!
   var redirectUrl:String?
+  var transaction3dsDelegate: Transaction3DSDelegate!
+  
+  override func viewDidAppear(_ animated: Bool) {
+    super.viewDidAppear(animated)
+  }
+  
+  @objc
+  func cancel(sender: UIBarButtonItem){
+    self.dismiss(animated: true, completion: nil)
+    self.transaction3dsDelegate.onTransactionResult(nil, "Cancelled")
+  }
   
   override func viewDidLoad() {
     super.viewDidLoad()
+    
+    let cancelButton = UIBarButtonItem(barButtonSystemItem: .cancel, target: self, action: #selector(cancel(sender:)))
+    self.navigationItem.leftBarButtonItem = cancelButton
     
     //Authentication handling for 3DS payment
     let requestUrl:URL = URL.init(string: self.redirectUrl!)!
@@ -117,16 +139,22 @@ class WKWebViewController: UIViewController {
       success: { (response: TransactionResultResponse) in
         
         if response.responseCode == APIResponseCode.TRANSACTION_COMPLETED {
-          
           //Inquiry payment result by using transaction id.
           let transactionID:String = response.transactionID!
+          self.transaction3dsDelegate.onTransactionResult(transactionID, nil)
         } else {
           //Get error response and display error
+          self.transaction3dsDelegate.onTransactionResult(nil, response.responseDescription!)
         }
     }, failure: { (error: NSError) in
       //Get error response and display error
+      self.transaction3dsDelegate.onTransactionResult(nil, error.description)
     })
     
     return self.pgwWebViewDelegate
   }
+}
+
+protocol Transaction3DSDelegate{
+  func onTransactionResult(_ transactionId: String?, _ errorMessage: String?)
 }
