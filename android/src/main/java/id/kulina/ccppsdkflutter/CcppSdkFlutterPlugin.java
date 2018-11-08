@@ -75,13 +75,11 @@ public class CcppSdkFlutterPlugin implements MethodCallHandler, PluginRegistry.A
   }
 
   private void paymentWithCC(final Result result, String paymentToken, String ccNumber, Integer expMonth, Integer expYear, String cvv) {
-    String paymentToken = "roZG9I1hk/GYjNt+BYPYbxQtKElbZDs9M5cXuEbE+Z0QTr/yUcl1oG7t0AGoOJlBhzeyBtf5mQi1UqGbjC66E85S4m63CfV/awwNbbLbkxsvfgzn0KSv7JzH3gcs/OIL";
-
     //Construct credit card request
-    CreditCardPayment creditCardPayment = new CreditCardPaymentBuilder("4111111111111111")
-            .setExpiryMonth(12)
-            .setExpiryYear(2019)
-            .setSecurityCode("123")
+    CreditCardPayment creditCardPayment = new CreditCardPaymentBuilder(ccNumber)
+            .setExpiryMonth(expMonth)
+            .setExpiryYear(expYear)
+            .setSecurityCode(cvv)
             .build();
 
     //Construct transaction request
@@ -98,10 +96,10 @@ public class CcppSdkFlutterPlugin implements MethodCallHandler, PluginRegistry.A
         //For 3DS
         if(response.getResponseCode().equals(APIResponseCode.TRANSACTION_AUTHENTICATE)) {
 
-          String redirectUrl = response.getRedirectUrl();
-          Intent i = new Intent(activity, WebViewActivity.class);
-          i.putExtra("redirect", redirectUrl);
-          activity.startActivity(i); //Open WebView for 3DS
+					String redirectUrl = response.getRedirectUrl();
+					Intent i = new Intent(activity, WebViewActivity.class);
+					i.putExtra("redirect", redirectUrl);
+					activity.startActivityForResult(i, CCPP_AUTH_REQUEST_CODE); //Open WebView for 3DS
         } else if(response.getResponseCode().equals(APIResponseCode.TRANSACTION_COMPLETED)) {
 
           //Inquiry payment result by using transaction id.
@@ -109,10 +107,6 @@ public class CcppSdkFlutterPlugin implements MethodCallHandler, PluginRegistry.A
           result.success(transactionID);
         } else {
           //Get error response and display error
-//          String redirectUrl = response.getRedirectUrl();
-//          Intent i = new Intent(activity, WebViewActivity.class);
-//          i.putExtra("redirect", "https://google.com");
-//          activity.startActivityForResult(i, CCPP_AUTH_REQUEST_CODE); //Open WebView for 3DS
           result.success("ERROR " + response.getResponseDescription());
         }
       }
@@ -127,14 +121,12 @@ public class CcppSdkFlutterPlugin implements MethodCallHandler, PluginRegistry.A
 
   @Override
   public boolean onActivityResult(int requestCode, int resultCode, Intent intent) {
-    Log.d("afas", "onActivityResult: HAHAHAHAH" + requestCode);
     if(requestCode == CCPP_AUTH_REQUEST_CODE){
       if(resultCode == Activity.RESULT_OK){
         String res = intent.getStringExtra("result");
         result.success(res);
         return true;
       }
-      Log.d("ADA", "onActivityResult: HAHAHAH");
       return true;
     }
     return false;
